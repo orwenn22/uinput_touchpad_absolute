@@ -23,8 +23,8 @@
 //congrats, your touchpad will most likely work! :D
 //(make sure there are also absolute events when you move your finger on your trackpad)
 //
-//now put whatever device your trackpad is in here
-#define TOUCHPAD_DEV "/dev/input/event9"
+//now put whatever device your trackpad is in here (NOTE: THIS MAY CHANGE ON REBOOT)
+#define TOUCHPAD_DEV "/dev/input/event8"
 
 //and put the touchpad's maximum absolute coordinates here
 #define PAD_MAX_X 3220
@@ -36,12 +36,13 @@
 #define PAD_REGION_MAX_X (PAD_REGION_MIN_X+1500)
 #define PAD_REGION_MAX_Y (PAD_REGION_MIN_Y+1000)
 
+//screen resolution, multi-monitor setups are (probably?) not supported
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
 
 //TODO: add ability to map a region of the screen?
 
-//uncomment this if you want to use your entire screen (or for debugging purpose idk)
+//uncomment this if you want to map your entire screen
 #define FULLSCREEN_MODE
 
 //OPTIONAL
