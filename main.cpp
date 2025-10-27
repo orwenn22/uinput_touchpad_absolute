@@ -1,13 +1,22 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include "main.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/uinput.h>
 #include <linux/input.h>
-#include <string.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sched.h>
+
+#include <thread>
+#include <vector>
+
+#include "console_input_thread.h"
+#include "utils.h"
 
 
 //how 2 find your trackpad :)
@@ -55,6 +64,9 @@
 //sway (hyprland maybe?): swaymsg input "type:touchpad" events disabled
 //sway (re-enable): swaymsg input "type:touchpad" events endabled
 
+
+MainThreadInfo g_main_thread_info = {0};
+
 int setup_uinput_device() {
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
@@ -101,18 +113,6 @@ int setup_uinput_device() {
     return fd;
 }
 
-void emit(int fd, int type, int code, int val) {
-    struct input_event ev = {0};
-    ev.type = type;
-    ev.code = code;
-    ev.value = val;
-    gettimeofday(&ev.time, NULL);
-    write(fd, &ev, sizeof(ev));
-}
-
-void send_syn(int fd) {
-    emit(fd, EV_SYN, SYN_REPORT, 0);
-}
 
 int main(void) {
     int touch_fd = open(TOUCHPAD_DEV, O_RDONLY);
@@ -133,62 +133,88 @@ int main(void) {
         perror("Failed to set real-time priority");
     }
 
+    g_main_thread_info.absolute_x = 0;
+    g_main_thread_info.absolute_y = 0;
+    g_main_thread_info.running = true;
+    g_main_thread_info.last_down = {0};
+    g_main_thread_info.tap_active = 0;
+    gettimeofday(&g_main_thread_info.pulling_rate_start, nullptr);
+    g_main_thread_info.pulling_rate = 0;
+    g_main_thread_info.pulling_rate_tmp = 0;
+
+    std::vector<std::thread> threads;
+    threads.emplace_back(console_input_thread_main);
+
     struct input_event ev;
-    int abs_x = 0, abs_y = 0;
     int touching = 0;
-    int update_count = 0;
+    int x_updated = 0, y_updated = 0;
 
-    //used allow clicking by just tapping
-    struct timeval last_down = {0};
-    int tap_active = 0;
+    //for poll()
+    struct pollfd fds[1];
+    fds[0].fd = touch_fd;
+    fds[0].events = POLLIN;
 
-    while (1) {
-        ssize_t n = read(touch_fd, &ev, sizeof(ev)); //read event from real trackpad
+    while (g_main_thread_info.running) {
+        //monitor pulling rate
+        struct timeval now;
+        gettimeofday(&now, NULL);
+
+        long dt_pr = (now.tv_sec - g_main_thread_info.pulling_rate_start.tv_sec) * 1000 +
+                     (now.tv_usec - g_main_thread_info.pulling_rate_start.tv_usec) / 1000;
+
+        if (dt_pr >= 1000) { //update pulling_rate every 1 s
+            g_main_thread_info.pulling_rate_start = now;
+            g_main_thread_info.pulling_rate = g_main_thread_info.pulling_rate_tmp;
+            g_main_thread_info.pulling_rate_tmp = 0;
+            printf("pulling rate (EV_SYN/sec) %i\n", g_main_thread_info.pulling_rate);
+        }
+
+        //read from actual trackpad
+        if (poll(fds, 1, 1000) <= 0) continue; //non-blocking way of checking if there are events comming from the trackpad
+        ssize_t n = read(touch_fd, &ev, sizeof(ev));
         if (n != sizeof(ev)) continue;
 
         if (ev.type == EV_ABS) {
             if (ev.code == ABS_X) {
-                abs_x = ev.value;
-                ++update_count;
+                g_main_thread_info.absolute_x = ev.value;
+                x_updated = 1;
             }
             else if (ev.code == ABS_Y) {
-                abs_y = ev.value;
-                ++update_count;
+                g_main_thread_info.absolute_y = ev.value;
+                y_updated = 1;
             }
 
 #ifndef FULLSCREEN_MODE
             //clamp coordinates to the defined region
-            if (abs_x < PAD_REGION_MIN_X) abs_x = PAD_REGION_MIN_X;
-            if (abs_x > PAD_REGION_MAX_X) abs_x = PAD_REGION_MAX_X;
-            if (abs_y < PAD_REGION_MIN_Y) abs_y = PAD_REGION_MIN_Y;
-            if (abs_y > PAD_REGION_MAX_Y) abs_y = PAD_REGION_MAX_Y;
+            if (g_main_thread_info.absolute_x < PAD_REGION_MIN_X) g_main_thread_info.absolute_x = PAD_REGION_MIN_X;
+            if (g_main_thread_info.absolute_x > PAD_REGION_MAX_X) g_main_thread_info.absolute_x = PAD_REGION_MAX_X;
+            if (g_main_thread_info.absolute_y < PAD_REGION_MIN_Y) g_main_thread_info.absolute_y = PAD_REGION_MIN_Y;
+            if (g_main_thread_info.absolute_y > PAD_REGION_MAX_Y) g_main_thread_info.absolute_y = PAD_REGION_MAX_Y;
 
             //map region to full screen
-            int screen_x = (abs_x - PAD_REGION_MIN_X) * SCREEN_WIDTH / (PAD_REGION_MAX_X - PAD_REGION_MIN_X);
-            int screen_y = (abs_y - PAD_REGION_MIN_Y) * SCREEN_HEIGHT / (PAD_REGION_MAX_Y - PAD_REGION_MIN_Y);
+            int screen_x = (g_main_thread_info.absolute_x - PAD_REGION_MIN_X) * SCREEN_WIDTH / (PAD_REGION_MAX_X - PAD_REGION_MIN_X);
+            int screen_y = (g_main_thread_info.absolute_y - PAD_REGION_MIN_Y) * SCREEN_HEIGHT / (PAD_REGION_MAX_Y - PAD_REGION_MIN_Y);
 #else
             //fullscreen (old code)
-            int screen_x = abs_x * SCREEN_WIDTH / PAD_MAX_X;
-            int screen_y = abs_y * SCREEN_HEIGHT / PAD_MAX_Y;
+            int screen_x = g_main_thread_info.absolute_x * SCREEN_WIDTH / PAD_MAX_X;
+            int screen_y = g_main_thread_info.absolute_y * SCREEN_HEIGHT / PAD_MAX_Y;
 #endif
 
             //send cursor position from our fake device
-            if (update_count >= 2) { //somehow, adding that condition makes stuff look less glitchy
-                emit(uinput_fd, EV_ABS, ABS_X, screen_x);
-                emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
-                send_syn(uinput_fd);
-                update_count = 0;
-            }
+            if (x_updated) emit(uinput_fd, EV_ABS, ABS_X, screen_x);
+            if (y_updated) emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
+            send_syn(uinput_fd);
+            x_updated = 0;
+            y_updated = 0;
+            ++g_main_thread_info.pulling_rate_tmp;
         }
         else if (ev.type == EV_KEY && ev.code == BTN_TOUCH) {
             if (ev.value == 1) {
-                gettimeofday(&last_down, NULL);
-                tap_active = 1;
-            } else if (ev.value == 0 && tap_active) {
-                struct timeval now;
-                gettimeofday(&now, NULL);
-                long dt = (now.tv_sec - last_down.tv_sec) * 1000 +
-                          (now.tv_usec - last_down.tv_usec) / 1000;
+                gettimeofday(&g_main_thread_info.last_down, NULL);
+                g_main_thread_info.tap_active = 1;
+            } else if (ev.value == 0 && g_main_thread_info.tap_active) {
+                long dt = (now.tv_sec - g_main_thread_info.last_down.tv_sec) * 1000 +
+                          (now.tv_usec - g_main_thread_info.last_down.tv_usec) / 1000;
                 if (dt < 200) { //200 ms tap (simulate a click)
                     emit(uinput_fd, EV_KEY, BTN_LEFT, 1);
                     send_syn(uinput_fd);
@@ -196,13 +222,20 @@ int main(void) {
                     emit(uinput_fd, EV_KEY, BTN_LEFT, 0);
                     send_syn(uinput_fd);
                 }
-                tap_active = 0;
+                g_main_thread_info.tap_active = 0;
             }
         }
     }
 
+    printf("joining threads\n");
+    g_main_thread_info.running = false; //in case the loop is ended with a break somehow (shouldn't happen)
+    for (auto& thread : threads) thread.join();
+
+    printf("destroying fds\n");
     ioctl(uinput_fd, UI_DEV_DESTROY);
     close(uinput_fd);
     close(touch_fd);
+
+    printf("exited cleanly\n");
     return 0;
 }
