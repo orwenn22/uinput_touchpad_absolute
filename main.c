@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
+#include <sched.h>
 
 
 //how 2 find your trackpad :)
@@ -23,7 +24,7 @@
 //(make sure there are also absolute events when you move your finger on your trackpad)
 //
 //now put whatever device your trackpad is in here
-#define TOUCHPAD_DEV "/dev/input/event8"
+#define TOUCHPAD_DEV "/dev/input/event9"
 
 //and put the touchpad's maximum absolute coordinates here
 #define PAD_MAX_X 3220
@@ -124,9 +125,17 @@ int main(void) {
     printf("reading absolute coordinates from %s\n", TOUCHPAD_DEV);
     printf("moving virtual cursor via uinput... (ctrl+c to quit)\n");
 
+    //bigger thread priority for less input latency? idk
+    struct sched_param param;
+    param.sched_priority = 50;
+    if (sched_setscheduler(0, SCHED_FIFO, &param) == -1) {
+        perror("Failed to set real-time priority");
+    }
+
     struct input_event ev;
     int abs_x = 0, abs_y = 0;
     int touching = 0;
+    int x_updated = 0, y_updated = 0;
 
     //used allow clicking by just tapping
     struct timeval last_down = {0};
@@ -137,8 +146,14 @@ int main(void) {
         if (n != sizeof(ev)) continue;
 
         if (ev.type == EV_ABS) {
-            if (ev.code == ABS_X) abs_x = ev.value;
-            else if (ev.code == ABS_Y) abs_y = ev.value;
+            if (ev.code == ABS_X) {
+                abs_x = ev.value;
+                x_updated = 1;
+            }
+            else if (ev.code == ABS_Y) {
+                abs_y = ev.value;
+                y_updated = 1;
+            }
 
 #ifndef FULLSCREEN_MODE
             //clamp coordinates to the defined region
@@ -157,9 +172,13 @@ int main(void) {
 #endif
 
             //send cursor position from our fake device
-            emit(uinput_fd, EV_ABS, ABS_X, screen_x);
-            emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
-            send_syn(uinput_fd);
+            if (x_updated && y_updated) { //somehow, adding that condition makes stuff more efficient
+                emit(uinput_fd, EV_ABS, ABS_X, screen_x);
+                emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
+                send_syn(uinput_fd);
+                x_updated = 0;
+                y_updated = 0;
+            }
         }
         else if (ev.type == EV_KEY && ev.code == BTN_TOUCH) {
             if (ev.value == 1) {
