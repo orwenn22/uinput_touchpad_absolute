@@ -136,7 +136,7 @@ int main(void) {
     struct input_event ev;
     int abs_x = 0, abs_y = 0;
     int touching = 0;
-    int x_updated = 0, y_updated = 0;
+    int update_count = 0;
 
     //used allow clicking by just tapping
     struct timeval last_down = {0};
@@ -149,11 +149,11 @@ int main(void) {
         if (ev.type == EV_ABS) {
             if (ev.code == ABS_X) {
                 abs_x = ev.value;
-                x_updated = 1;
+                ++update_count;
             }
             else if (ev.code == ABS_Y) {
                 abs_y = ev.value;
-                y_updated = 1;
+                ++update_count;
             }
 
 #ifndef FULLSCREEN_MODE
@@ -173,12 +173,11 @@ int main(void) {
 #endif
 
             //send cursor position from our fake device
-            if (x_updated && y_updated) { //somehow, adding that condition makes stuff more efficient
+            if (update_count >= 2) { //somehow, adding that condition makes stuff look less glitchy
                 emit(uinput_fd, EV_ABS, ABS_X, screen_x);
                 emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
                 send_syn(uinput_fd);
-                x_updated = 0;
-                y_updated = 0;
+                update_count = 0;
             }
         }
         else if (ev.type == EV_KEY && ev.code == BTN_TOUCH) {
