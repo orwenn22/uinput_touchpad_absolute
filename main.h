@@ -1,9 +1,6 @@
 #ifndef UINPUT_TOUCHPAD_ABSOLUTE_MAIN_H
 #define UINPUT_TOUCHPAD_ABSOLUTE_MAIN_H
 
-#include <atomic>
-#include <ctime>
-
 
 //how 2 find your trackpad :)
 //run this
@@ -50,33 +47,8 @@
 //sway (re-enable): swaymsg input "type:touchpad" events endabled
 
 
-struct MainThreadInfo {
-    MainThreadInfo();
-    ~MainThreadInfo();
+#include "AbsoluteTouchMouse.h"
 
-    std::atomic<bool> running; //whether the main loop is still running
-    std::atomic<bool> enabled;
-    std::atomic<bool> verbose;
-
-    int absolute_max_x, absolute_max_y; //the pad's maximum absolute coordinates
-    int absolute_x, absolute_y; //the finger's current absolute position on the trackpad
-    int clamped_absolute_x, clamped_absolute_y; //the position restricted to the area if enable_area is true
-
-    int screen_width, screen_height;
-
-    std::atomic<bool> enable_area;
-    int area_min_x, area_min_y,
-        area_max_x, area_max_y;
-
-    struct timeval last_down = {0};
-    int tap_active;
-
-    std::atomic<bool> show_pulling_rate;
-    struct timeval pulling_rate_start = {0};
-    int pulling_rate; //number of SYN event sent from virtual device in the previous second
-    int pulling_rate_tmp; //number of SYN event sent from the virtual device since pulling_rate_start
-};
-
-extern MainThreadInfo g_main_thread_info;
+extern AbsoluteTouchMouse g_main_thread_device;
 
 #endif //UINPUT_TOUCHPAD_ABSOLUTE_MAIN_H

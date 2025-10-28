@@ -7,4 +7,6 @@ add_executable(uinput_touchpad_absolute main.cpp
         main.h
         utils.h
         console_input_thread.cpp
-        console_input_thread.h)
+        console_input_thread.h
+        AbsoluteTouchMouse.cpp
+        AbsoluteTouchMouse.h)
