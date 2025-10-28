@@ -18,54 +18,38 @@
 #include "console_input_thread.h"
 #include "utils.h"
 
+MainThreadInfo g_main_thread_info = MainThreadInfo();
 
-//how 2 find your trackpad :)
-//run this
-// sudo libinput list-devices
-//
-//look for anything that looks like a trackpad, and try running this on them
-// sudo evtest /dev/input/event<some_number>
-//
-//if at the top you have something like this
-// Event code 0 (ABS_X) Min 0 Max 3220
-// Event code 1 (ABS_Y) Min 0 Max 1952
-//congrats, your touchpad will most likely work! :D
-//(make sure there are also absolute events when you move your finger on your trackpad)
-//
-//now put whatever device your trackpad is in here (NOTE: THIS MAY CHANGE ON REBOOT)
-#define TOUCHPAD_DEV "/dev/input/event8"
+MainThreadInfo::MainThreadInfo() {
+    running = true;
+    enabled = true;
+    verbose = false;
 
-//and put the touchpad's maximum absolute coordinates here
-#define PAD_MAX_X 3220
-#define PAD_MAX_Y 1952
+    absolute_max_x = PAD_MAX_X;
+    absolute_max_y = PAD_MAX_Y;
+    absolute_x = 0;
+    absolute_y = 0;
+    clamped_absolute_x = 0;
+    clamped_absolute_y = 0;
 
-//stuff to map a region of the trackpad to the screen ("tablet area") (only used if FULLSCREEN_MODE is not defined, else it will just use PAD_MAX_X and PAD_MAX_Y)
-#define PAD_REGION_MIN_X 1000
-#define PAD_REGION_MIN_Y 500
-#define PAD_REGION_MAX_X (PAD_REGION_MIN_X+1500)
-#define PAD_REGION_MAX_Y (PAD_REGION_MIN_Y+1000)
+    screen_width = SCREEN_WIDTH;
+    screen_height = SCREEN_HEIGHT;
 
-//screen resolution, multi-monitor setups are (probably?) not supported
-#define SCREEN_WIDTH 1920
-#define SCREEN_HEIGHT 1080
+    enable_area = false;
+    area_min_x = PAD_REGION_MIN_X;
+    area_min_y = PAD_REGION_MIN_Y;
+    area_max_x = PAD_REGION_MAX_X;
+    area_max_y = PAD_REGION_MAX_Y;
 
-//TODO: add ability to map a region of the screen?
+    last_down = {0};
+    tap_active = 0;
 
-//uncomment this if you want to map your entire screen
-#define FULLSCREEN_MODE
-
-//OPTIONAL
-//
-//you might want to disable your trackpad temporarely while running this
-//THIS IS PERSISTANT AND WILL DISABLE YOUR TRACKPAD UNTIL YOU ENABLE IT BACK,
-//USE AT YOUR OWN RISK
-//gnome: gsettings set org.gnome.desktop.peripherals.touchpad send-events 'disabled'
-//gnome (re-enable): gsettings reset org.gnome.desktop.peripherals.touchpad send-events
-//sway (hyprland maybe?): swaymsg input "type:touchpad" events disabled
-//sway (re-enable): swaymsg input "type:touchpad" events endabled
-
-
-MainThreadInfo g_main_thread_info = {0};
+    show_pulling_rate = false;
+    gettimeofday(&pulling_rate_start, nullptr);
+    pulling_rate = 0;
+    pulling_rate_tmp = 0;
+}
+MainThreadInfo::~MainThreadInfo() = default;
 
 int setup_uinput_device() {
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -133,15 +117,6 @@ int main(void) {
         perror("Failed to set real-time priority");
     }
 
-    g_main_thread_info.absolute_x = 0;
-    g_main_thread_info.absolute_y = 0;
-    g_main_thread_info.running = true;
-    g_main_thread_info.last_down = {0};
-    g_main_thread_info.tap_active = 0;
-    gettimeofday(&g_main_thread_info.pulling_rate_start, nullptr);
-    g_main_thread_info.pulling_rate = 0;
-    g_main_thread_info.pulling_rate_tmp = 0;
-
     std::vector<std::thread> threads;
     threads.emplace_back(console_input_thread_main);
 
@@ -157,7 +132,7 @@ int main(void) {
     while (g_main_thread_info.running) {
         //monitor pulling rate
         struct timeval now;
-        gettimeofday(&now, NULL);
+        gettimeofday(&now, nullptr);
 
         long dt_pr = (now.tv_sec - g_main_thread_info.pulling_rate_start.tv_sec) * 1000 +
                      (now.tv_usec - g_main_thread_info.pulling_rate_start.tv_usec) / 1000;
@@ -166,44 +141,50 @@ int main(void) {
             g_main_thread_info.pulling_rate_start = now;
             g_main_thread_info.pulling_rate = g_main_thread_info.pulling_rate_tmp;
             g_main_thread_info.pulling_rate_tmp = 0;
-            printf("pulling rate (EV_SYN/sec) %i\n", g_main_thread_info.pulling_rate);
+            if (g_main_thread_info.show_pulling_rate) printf("pulling rate (EV_SYN/sec) %i\n", g_main_thread_info.pulling_rate);
         }
 
         //read from actual trackpad
         if (poll(fds, 1, 1000) <= 0) continue; //non-blocking way of checking if there are events comming from the trackpad
         ssize_t n = read(touch_fd, &ev, sizeof(ev));
         if (n != sizeof(ev)) continue;
+        if (!g_main_thread_info.enabled) continue;
 
         if (ev.type == EV_ABS) {
             if (ev.code == ABS_X) {
                 g_main_thread_info.absolute_x = ev.value;
+                g_main_thread_info.clamped_absolute_x = ev.value;
                 x_updated = 1;
             }
             else if (ev.code == ABS_Y) {
                 g_main_thread_info.absolute_y = ev.value;
+                g_main_thread_info.clamped_absolute_y = ev.value;
                 y_updated = 1;
             }
 
-#ifndef FULLSCREEN_MODE
-            //clamp coordinates to the defined region
-            if (g_main_thread_info.absolute_x < PAD_REGION_MIN_X) g_main_thread_info.absolute_x = PAD_REGION_MIN_X;
-            if (g_main_thread_info.absolute_x > PAD_REGION_MAX_X) g_main_thread_info.absolute_x = PAD_REGION_MAX_X;
-            if (g_main_thread_info.absolute_y < PAD_REGION_MIN_Y) g_main_thread_info.absolute_y = PAD_REGION_MIN_Y;
-            if (g_main_thread_info.absolute_y > PAD_REGION_MAX_Y) g_main_thread_info.absolute_y = PAD_REGION_MAX_Y;
+            int screen_x, screen_y;
+            if (g_main_thread_info.enable_area) {
+                //clamp coordinates to the defined region
+                if (g_main_thread_info.clamped_absolute_x < g_main_thread_info.area_min_x) g_main_thread_info.clamped_absolute_x = g_main_thread_info.area_min_x;
+                if (g_main_thread_info.clamped_absolute_x > g_main_thread_info.area_max_x) g_main_thread_info.clamped_absolute_x = g_main_thread_info.area_max_x;
+                if (g_main_thread_info.clamped_absolute_y < g_main_thread_info.area_min_y) g_main_thread_info.clamped_absolute_y = g_main_thread_info.area_min_y;
+                if (g_main_thread_info.clamped_absolute_y > g_main_thread_info.area_max_y) g_main_thread_info.clamped_absolute_y = g_main_thread_info.area_max_y;
 
-            //map region to full screen
-            int screen_x = (g_main_thread_info.absolute_x - PAD_REGION_MIN_X) * SCREEN_WIDTH / (PAD_REGION_MAX_X - PAD_REGION_MIN_X);
-            int screen_y = (g_main_thread_info.absolute_y - PAD_REGION_MIN_Y) * SCREEN_HEIGHT / (PAD_REGION_MAX_Y - PAD_REGION_MIN_Y);
-#else
-            //fullscreen (old code)
-            int screen_x = g_main_thread_info.absolute_x * SCREEN_WIDTH / PAD_MAX_X;
-            int screen_y = g_main_thread_info.absolute_y * SCREEN_HEIGHT / PAD_MAX_Y;
-#endif
+                //map region to full screen
+                screen_x = (g_main_thread_info.absolute_x - g_main_thread_info.area_min_x) * g_main_thread_info.screen_width / (g_main_thread_info.area_max_x - g_main_thread_info.area_min_x);
+                screen_y = (g_main_thread_info.absolute_y - g_main_thread_info.area_min_y) * g_main_thread_info.screen_height / (g_main_thread_info.area_max_y - g_main_thread_info.area_min_y);
+            }
+            else {
+
+                screen_x = g_main_thread_info.absolute_x * g_main_thread_info.screen_width / g_main_thread_info.absolute_max_x;
+                screen_y = g_main_thread_info.absolute_y * g_main_thread_info.screen_height / g_main_thread_info.absolute_max_y;
+            }
 
             //send cursor position from our fake device
             if (x_updated) emit(uinput_fd, EV_ABS, ABS_X, screen_x);
             if (y_updated) emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
             send_syn(uinput_fd);
+            if (g_main_thread_info.verbose) printf("%i %i\n", screen_x, screen_y);
             x_updated = 0;
             y_updated = 0;
             ++g_main_thread_info.pulling_rate_tmp;
