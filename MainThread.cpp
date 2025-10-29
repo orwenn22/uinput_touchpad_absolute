@@ -29,6 +29,8 @@ void MainThread::RunLoop() {
 
         //this kinda sucks, because if some random thread sets its m_running value to false, but still sets its m_running to false,
         //it will block the main tread. maybe calling m_device.Tick() should be moved in its own secondary thread?
+        //this shouldn't be an issue for the time being, since the user will most likely never stop a secondary thread while
+        //doing something that is sensitive to input-latency
         for (int i = 0; i < m_threads.size(); i++) {
             if (m_threads[i]->m_running) continue;
             printf("joining thread with id %i (m_running false)\n", m_threads[i]->m_id);

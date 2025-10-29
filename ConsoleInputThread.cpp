@@ -12,7 +12,7 @@ ConsoleInputThread::~ConsoleInputThread() = default;
 
 void ConsoleInputThread::Run() {
     auto device = GetMainThread()->GetAbsoluteTouchMouse();
-    while (GetMainThread()->m_running && m_running) {
+    while (GetMainThread()->m_running && Running()) {
         std::string line;
         if (!std::getline(std::cin, line)) break;
         if (line.empty()) continue;

@@ -17,7 +17,8 @@ int main() {
         MainThread main_thread;
         main_thread.AddThread(new ConsoleInputThread());
         main_thread.RunLoop();
-    }
+    } //MainThread is destroyed here
+
     printf("exited cleanly\n");
     return 0;
 }
