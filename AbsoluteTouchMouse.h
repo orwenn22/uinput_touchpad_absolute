@@ -24,7 +24,6 @@ struct AbsoluteTouchMouse {
     int uinput_fd;
     int pad_fd;
 
-    std::atomic<bool> running; //whether the main loop is still running
     std::atomic<bool> enabled;
     std::atomic<bool> verbose;
 

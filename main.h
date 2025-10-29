@@ -16,7 +16,7 @@
 //(make sure there are also absolute events when you move your finger on your trackpad)
 //
 //now put whatever device your trackpad is in here (NOTE: THIS MAY CHANGE ON REBOOT)
-#define TOUCHPAD_DEV "/dev/input/event9"
+#define TOUCHPAD_DEV "/dev/input/event10"
 
 //and put the touchpad's maximum absolute coordinates here
 #define PAD_MAX_X 3220
@@ -46,9 +46,5 @@
 //sway (hyprland maybe?): swaymsg input "type:touchpad" events disabled
 //sway (re-enable): swaymsg input "type:touchpad" events endabled
 
-
-#include "AbsoluteTouchMouse.h"
-
-extern AbsoluteTouchMouse g_main_thread_device;
 
 #endif //UINPUT_TOUCHPAD_ABSOLUTE_MAIN_H

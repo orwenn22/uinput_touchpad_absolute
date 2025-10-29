@@ -6,7 +6,11 @@ set(CMAKE_CXX_STANDARD 17)
 add_executable(uinput_touchpad_absolute main.cpp
         main.h
         utils.h
-        console_input_thread.cpp
-        console_input_thread.h
         AbsoluteTouchMouse.cpp
-        AbsoluteTouchMouse.h)
+        AbsoluteTouchMouse.h
+        MainThread.cpp
+        MainThread.h
+        SecondaryThread.cpp
+        SecondaryThread.h
+        ConsoleInputThread.cpp
+        ConsoleInputThread.h)

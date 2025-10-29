@@ -18,7 +18,6 @@
 AbsoluteTouchMouse::AbsoluteTouchMouse() {
     uinput_fd = -1;
     pad_fd = -1;
-    running = true;
     enabled = true;
     verbose = false;
 
@@ -227,14 +226,14 @@ void AbsoluteTouchMouse::Tick() {
         pulling_rate_start = now;
         pulling_rate = pulling_rate_tmp;
         pulling_rate_tmp = 0;
-        if (show_pulling_rate) printf("pulling rate (EV_SYN/sec) %i\n", g_main_thread_device.pulling_rate);
+        if (show_pulling_rate) printf("pulling rate (EV_SYN/sec) %i\n", pulling_rate);
     }
 
     //read from actual trackpad
     if (poll(fds, 1, 1000) <= 0) return; //non-blocking way of checking if there are events comming from the trackpad
     ssize_t n = read(pad_fd, &ev, sizeof(ev));
     if (n != sizeof(ev)) return;
-    if (!g_main_thread_device.enabled) return;
+    if (!enabled) return;
 
-    g_main_thread_device.ProcessEvent(ev);
+    ProcessEvent(ev);
 }
