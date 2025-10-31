@@ -48,6 +48,7 @@ void MainThread::RunLoop() {
             printf("joining thread (RunLoop loop)\n");
             delete m_threads[i];
             m_threads.erase(m_threads.begin() + i);
+            --i;
         }
         m_threads_mutex.unlock();
     }
@@ -109,6 +110,10 @@ void MainThread::StartSecondaryThread(SecondaryThread *thread) {
     //actuallu start the thread
     {
         std::lock_guard<std::mutex> lg(thread->m_thread_mutex);
+
+        //we need to set this to true now because we don't exactly know when InternalRun will be called.
+        //maybe by then we will already be back in the RunLoop, and it will try to delete the thread if Internal hasn't been called yet
+        thread->m_running = true;
         thread->m_thread = std::thread(&SecondaryThread::InternalRun, thread);
     }
 }
