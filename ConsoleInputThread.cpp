@@ -5,6 +5,7 @@
 #include <string>
 
 #include "MainThread.h"
+#include "Visualizer/VisualizerThread.h"
 
 ConsoleInputThread::ConsoleInputThread() : SecondaryThread(1) {}
 
@@ -23,6 +24,7 @@ void ConsoleInputThread::Run() {
         else if (line == "q" || line == "quit") break;
         else if (line == "enable") device->enabled = true;
         else if (line == "disable") device->enabled = false;
+        else if (line == "v") LaunchVisualizer();
         else printf("unknown command '%s'\n", line.c_str());
     }
     GetMainThread()->m_running = false; //quit entire application
@@ -48,5 +50,9 @@ void ConsoleInputThread::ToggleVerbose(AbsoluteTouchMouse *device) {
 
 void ConsoleInputThread::TogglePullingRate(AbsoluteTouchMouse *device) {
     device->show_pulling_rate = !device->show_pulling_rate;
+}
+
+void ConsoleInputThread::LaunchVisualizer() {
+    GetMainThread()->AddThread(new VisualizerThread);
 }
 

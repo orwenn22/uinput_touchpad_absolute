@@ -138,6 +138,7 @@ void AbsoluteTouchMouse::ProcessEvent(struct input_event &ev) {
     }
 
     if (ev.type == EV_ABS) {
+        std::lock_guard<std::mutex> lg(positions_lock);
         if (ev.code == ABS_X) {
             absolute_x = ev.value;
             clamped_absolute_x = ev.value;
@@ -148,6 +149,7 @@ void AbsoluteTouchMouse::ProcessEvent(struct input_event &ev) {
             clamped_absolute_y = ev.value;
             y_updated = 1;
         }
+        else return;
 
         int screen_x, screen_y;
         if (enable_area) {
@@ -171,9 +173,9 @@ void AbsoluteTouchMouse::ProcessEvent(struct input_event &ev) {
         if (y_updated) emit(uinput_fd, EV_ABS, ABS_Y, screen_y);
         send_syn(uinput_fd);
         if (verbose) printf("%i %i\n", screen_x, screen_y);
+        pulling_rate_tmp += (x_updated || y_updated);
         x_updated = 0;
         y_updated = 0;
-        ++pulling_rate_tmp;
     }
     else if (ev.type == EV_KEY && ev.code == BTN_TOUCH) {
         struct timeval now;

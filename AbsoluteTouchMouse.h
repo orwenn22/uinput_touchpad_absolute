@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <ctime>
+#include <mutex>
 
 struct AbsoluteTouchMouse {
     AbsoluteTouchMouse();
@@ -31,6 +32,7 @@ struct AbsoluteTouchMouse {
     int absolute_max_x, absolute_max_y; //the pad's maximum absolute coordinates
     int absolute_x, absolute_y; //the finger's current absolute position on the trackpad
     int clamped_absolute_x, clamped_absolute_y; //the position restricted to the area if enable_area is true
+    std::mutex positions_lock;
 
     int screen_width, screen_height;
 

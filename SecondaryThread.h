@@ -1,6 +1,7 @@
 #ifndef UINPUT_TOUCHPAD_ABSOLUTE_SECONDARYTHREAD_H
 #define UINPUT_TOUCHPAD_ABSOLUTE_SECONDARYTHREAD_H
 #include <atomic>
+#include <mutex>
 #include <thread>
 
 
@@ -30,6 +31,7 @@ private:
     int m_id;
 
     std::thread m_thread;
+    std::mutex m_thread_mutex;
 
     //this will be set to false by the main thread whenever this thread needs to stop, but the new thread can also set
     //this to false by calling Stop(), and the main thread will join the thread after that.

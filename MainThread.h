@@ -24,7 +24,11 @@ public:
     std::atomic<bool> m_running;
 
 private:
+    void StartSecondaryThread(SecondaryThread *thread);
+
     std::vector<SecondaryThread *> m_threads;
+    std::vector<SecondaryThread *> m_new_threads; //if some threads are added before RunLoop is called, they end up here
+    std::mutex m_threads_mutex;
     AbsoluteTouchMouse m_device;
 };
 

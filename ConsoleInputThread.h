@@ -16,6 +16,7 @@ private:
     void ToggleArea(AbsoluteTouchMouse *device);
     void ToggleVerbose(AbsoluteTouchMouse *device);
     void TogglePullingRate(AbsoluteTouchMouse *device);
+    void LaunchVisualizer();
 };
 
 
